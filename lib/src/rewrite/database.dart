@@ -119,6 +119,16 @@ Future<void> _activateObjectBox(String projectDir) async {
   // Phase 3: delete the drift package directory.
   final driftDir = Directory(p.join(projectDir, 'packages', 'database_drift'));
   if (driftDir.existsSync()) driftDir.deleteSync(recursive: true);
+
+  // A local template checkout may contain outputs from an earlier Drift
+  // scaffold verification. ObjectBox is authoritative for this branch.
+  for (final relative in const [
+    'lib/core/data/database/drift_module.dart',
+    'lib/core/data/sync/drift_sync_cursor_store.dart',
+  ]) {
+    final file = File(p.join(projectDir, p.joinAll(relative.split('/'))));
+    if (file.existsSync()) file.deleteSync();
+  }
 }
 
 Future<void> _activateDrift(
@@ -159,9 +169,10 @@ Future<void> _activateDrift(
   final driftPubspec = File(p.join(newDbDir, 'pubspec.yaml'));
   if (driftPubspec.existsSync()) {
     driftPubspec.writeAsStringSync(
-      driftPubspec
-          .readAsStringSync()
-          .replaceFirst('name: database_drift', 'name: database'),
+      driftPubspec.readAsStringSync().replaceFirst(
+            'name: database_drift',
+            'name: database',
+          ),
     );
   }
 
@@ -170,8 +181,10 @@ Future<void> _activateDrift(
   for (final entity in Directory(newDbDir).listSync(recursive: true)) {
     if (entity is! File || !entity.path.endsWith('.dart')) continue;
     final original = entity.readAsStringSync();
-    final rewritten =
-        original.replaceAll('package:database_drift/', 'package:database/');
+    final rewritten = original.replaceAll(
+      'package:database_drift/',
+      'package:database/',
+    );
     if (rewritten != original) entity.writeAsStringSync(rewritten);
   }
 
@@ -192,6 +205,22 @@ Future<void> _activateDrift(
   _writeBookmarksDataSource(projectDir);
   _writeCollectionsDataSource(projectDir);
   _writeNotificationsDataSource(projectDir);
+
+  // Phase 7: invalidate generated code whose dependency graph was built from
+  // the ObjectBox sources. These files are outputs, not rewrite inputs. Keeping
+  // them makes --no-setup appear complete while registering Store/ObjectBox
+  // against the Drift package; tool/codegen.sh deterministically recreates each
+  // surviving output from the rewritten sources.
+  for (final relative in const [
+    'lib/app/di/injection.config.dart',
+    'packages/database/lib/src/app_database.g.dart',
+    'packages/features/bookmarks/lib/src/di.module.dart',
+    'packages/features/collections/lib/src/di.module.dart',
+    'packages/features/notifications/lib/src/di.module.dart',
+  ]) {
+    final file = File(p.join(projectDir, p.joinAll(relative.split('/'))));
+    if (file.existsSync()) file.deleteSync();
+  }
 }
 
 void _writeDriftSyncCursorStore(String projectDir) {
@@ -235,10 +264,10 @@ class DriftSyncCursorStore implements SyncCursorStore {
 }
 
 void _writeDriftModule(String projectDir, {required bool useBackend}) {
-  final syncImports = useBackend
-      ? "import 'package:rev_sync/rev_sync.dart';\n"
-          "import '../sync/drift_sync_cursor_store.dart';\n"
-      : '';
+  final syncPackageImport =
+      useBackend ? "import 'package:rev_sync/rev_sync.dart';\n" : '';
+  final syncRelativeImport =
+      useBackend ? "\nimport '../sync/drift_sync_cursor_store.dart';\n" : '';
 
   final syncProvider = useBackend
       ? '''
@@ -249,18 +278,10 @@ void _writeDriftModule(String projectDir, {required bool useBackend}) {
       : '';
 
   File(
-    p.join(
-      projectDir,
-      'lib',
-      'core',
-      'data',
-      'database',
-      'drift_module.dart',
-    ),
+    p.join(projectDir, 'lib', 'core', 'data', 'database', 'drift_module.dart'),
   ).writeAsStringSync('''
 import 'package:database/database.dart';
-import 'package:injectable/injectable.dart';
-$syncImports// fst:feature:bookmarks:start
+// fst:feature:bookmarks:start
 // The app shell binds each feature's concrete local data source, and that
 // lives under the package's lib/src by design: a barrel exports the feature's
 // public surface, not its persistence internals.
@@ -281,6 +302,8 @@ import 'package:feature_collections/src/data/local/collections_local_data_source
 // ignore: implementation_imports
 import 'package:feature_notifications/src/data/local/notifications_local_data_source.dart';
 // fst:feature:notifications:end
+import 'package:injectable/injectable.dart';
+$syncPackageImport$syncRelativeImport
 
 /// Drift DI module: provides [AppDatabase] and the feature data sources backed
 /// by Drift. Auto-discovered by injectable_generator via the `@module`

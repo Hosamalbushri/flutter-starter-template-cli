@@ -8,7 +8,9 @@ void main() {
   group('expandExcludedFeatures', () {
     test('leaves an independent feature alone', () {
       expect(
-          expandExcludedFeatures({'notifications'}), equals({'notifications'}));
+        expandExcludedFeatures({'notifications'}),
+        equals({'notifications'}),
+      );
     });
 
     test('excluding collections also excludes bookmarks', () {
@@ -95,9 +97,9 @@ void main() {
         ..writeAsStringSync(content);
     }
 
-    String read(String relative) =>
-        File(p.join(dir.path, p.joinAll(relative.split('/'))))
-            .readAsStringSync();
+    String read(String relative) => File(
+          p.join(dir.path, p.joinAll(relative.split('/'))),
+        ).readAsStringSync();
 
     bool exists(String relative) =>
         File(p.join(dir.path, p.joinAll(relative.split('/')))).existsSync();
@@ -152,17 +154,19 @@ void main() {
 
     tearDown(() => dir.deleteSync(recursive: true));
 
-    test('strips the regions and deletes the package, keeping others',
-        () async {
-      await excludeFeatures(dir.path, {'notifications'});
+    test(
+      'strips the regions and deletes the package, keeping others',
+      () async {
+        await excludeFeatures(dir.path, {'notifications'});
 
-      final pubspec = read('pubspec.yaml');
-      expect(pubspec, isNot(contains('feature_notifications')));
-      expect(pubspec, contains('feature_bookmarks'));
-      expect(pubspec, contains('feature_auth'));
-      expect(exists('packages/features/notifications/pubspec.yaml'), isFalse);
-      expect(exists('packages/features/bookmarks/pubspec.yaml'), isTrue);
-    });
+        final pubspec = read('pubspec.yaml');
+        expect(pubspec, isNot(contains('feature_notifications')));
+        expect(pubspec, contains('feature_bookmarks'));
+        expect(pubspec, contains('feature_auth'));
+        expect(exists('packages/features/notifications/pubspec.yaml'), isFalse);
+        expect(exists('packages/features/bookmarks/pubspec.yaml'), isTrue);
+      },
+    );
 
     test('empty set is a no-op', () async {
       await excludeFeatures(dir.path, <String>{});
@@ -187,10 +191,11 @@ void main() {
             "import 'di/injection.dart';\n"
             '// fst:feature:_infra:end\n',
       );
-      await excludeFeatures(
-        dir.path,
-        {'bookmarks', 'collections', 'notifications'},
-      );
+      await excludeFeatures(dir.path, {
+        'bookmarks',
+        'collections',
+        'notifications',
+      });
       expect(read('lib/app/features.dart'), isNot(contains('injection.dart')));
     });
 

@@ -42,10 +42,7 @@ class CreateCommand extends Command<int> {
         'bundle-id',
         help: 'Bundle / App ID, reverse-DNS (skips the prompt).',
       )
-      ..addOption(
-        'org',
-        help: 'Organisation / author (skips the prompt).',
-      )
+      ..addOption('org', help: 'Organisation / author (skips the prompt).')
       ..addOption(
         'output-dir',
         abbr: 'o',
@@ -67,8 +64,8 @@ class CreateCommand extends Command<int> {
         'backend',
         defaultsTo: true,
         help: 'Include the backend pillar (default). Use --no-backend to '
-            'scaffold a fully local-only app: no network, no sync, no auth, '
-            'no server-backed demo features.',
+            'remove sync and server-backed demo features. Auth defaults off; '
+            'pass --auth to retain the JWT client and auth screens.',
       )
       ..addFlag(
         'minimal',
@@ -200,9 +197,14 @@ class CreateCommand extends Command<int> {
 
     final useFirebase = _resolveFirebase(yes: yes, forceDisabled: minimal);
 
-    // --no-backend (or --minimal) implies --no-auth.
+    // --no-backend defaults to no auth, but an explicit --auth retains the JWT
+    // client. --minimal is the only mode that unconditionally removes auth.
     final useBackend = _resolveBackend(yes: yes, forceDisabled: minimal);
-    final useAuth = _resolveAuth(yes: yes, forceDisabled: !useBackend);
+    final useAuth = _resolveAuth(
+      yes: yes,
+      forceDisabled: minimal,
+      defaultDisabled: !useBackend,
+    );
 
     final authProvider = _resolveAuthProvider(
       yes: yes,
@@ -257,12 +259,8 @@ class CreateCommand extends Command<int> {
     _logger.info(
       '  Auth           ${lightCyan.wrap(useAuth ? 'enabled' : 'disabled')}',
     );
-    _logger.info(
-      '  Auth provider  ${lightCyan.wrap(authProvider)}',
-    );
-    _logger.info(
-      '  Database       ${lightCyan.wrap(database)}',
-    );
+    _logger.info('  Auth provider  ${lightCyan.wrap(authProvider)}');
+    _logger.info('  Database       ${lightCyan.wrap(database)}');
     if (excludedFeatures.isNotEmpty) {
       _logger.info(
         '  Exclude        ${lightCyan.wrap(excludedFeatures.join(', '))}',
@@ -329,16 +327,13 @@ class CreateCommand extends Command<int> {
       }
     } else {
       final cloneProgress = _logger.progress('Cloning template');
-      final cloneResult = await Process.run(
-        'git',
-        [
-          'clone',
-          '--recurse-submodules',
-          '--depth=1',
-          _templateRepo,
-          outputDir,
-        ],
-      );
+      final cloneResult = await Process.run('git', [
+        'clone',
+        '--recurse-submodules',
+        '--depth=1',
+        _templateRepo,
+        outputDir,
+      ]);
       if (cloneResult.exitCode != 0) {
         cloneProgress.fail('Clone failed');
         _logger.err(cloneResult.stderr as String);
@@ -366,8 +361,11 @@ class CreateCommand extends Command<int> {
     final rewriteProgress = _logger.progress('Renaming template identifiers');
     try {
       await rewriteProject(outputDir, config);
-      await _writeProjectReadme(outputDir, config,
-          firebaseEnabled: useFirebase);
+      await _writeProjectReadme(
+        outputDir,
+        config,
+        firebaseEnabled: useFirebase,
+      );
       rewriteProgress.complete('Identifiers renamed');
     } catch (e) {
       rewriteProgress.fail('Rewrite failed');
@@ -421,8 +419,9 @@ class CreateCommand extends Command<int> {
     // Runs only when auth is kept AND the user selected firebase. Must run
     // AFTER disableAuth (which is skipped) and BEFORE excludeFeatures/setup.
     if (useAuth && authProvider == 'firebase') {
-      final providerProgress =
-          _logger.progress('Switching auth provider to Firebase Auth');
+      final providerProgress = _logger.progress(
+        'Switching auth provider to Firebase Auth',
+      );
       try {
         await applyFirebaseAuthProvider(outputDir);
         providerProgress.complete('Firebase Auth provider applied');
@@ -439,7 +438,7 @@ class CreateCommand extends Command<int> {
     if (!useBackend) {
       final backendProgress = _logger.progress('Removing backend pillar');
       try {
-        await disableBackend(outputDir);
+        await disableBackend(outputDir, preserveNetwork: useAuth);
         backendProgress.complete('Backend pillar removed');
       } catch (e) {
         backendProgress.fail('Removing backend pillar failed');
@@ -460,11 +459,7 @@ class CreateCommand extends Command<int> {
             : 'Switching database to $database',
       );
       try {
-        await swapDatabase(
-          outputDir,
-          choice: database,
-          useBackend: useBackend,
-        );
+        await swapDatabase(outputDir, choice: database, useBackend: useBackend);
         dbProgress.complete(
           database == 'objectbox'
               ? 'Database scaffold finalized'
@@ -533,8 +528,9 @@ class CreateCommand extends Command<int> {
     // directories and no .gitmodules, so `git submodule update --init` exits 1
     // and fails every job it appears in.
     {
-      final templateProgress =
-          _logger.progress('Removing template-only CI scaffolding');
+      final templateProgress = _logger.progress(
+        'Removing template-only CI scaffolding',
+      );
       try {
         await stripTemplateOnly(outputDir);
         templateProgress.complete('Template-only CI scaffolding removed');
@@ -584,10 +580,12 @@ class CreateCommand extends Command<int> {
           'Running tool/setup.sh (pub get + codegen…)',
         );
         final result = await Process.run(
-          'bash',
-          [setupScript, '--no-hooks'],
-          workingDirectory: outputDir,
-        );
+            'bash',
+            [
+              setupScript,
+              '--no-hooks',
+            ],
+            workingDirectory: outputDir);
         if (result.exitCode != 0) {
           setupProgress.fail('setup.sh failed');
           _logger.warn(result.stdout as String);
@@ -612,10 +610,13 @@ class CreateCommand extends Command<int> {
         final useFvm =
             File(p.join(outputDir, '.fvmrc')).existsSync() && _hasFvm();
         final result = await Process.run(
-          useFvm ? 'fvm' : 'dart',
-          [if (useFvm) 'dart', 'run', 'flutter_launcher_icons'],
-          workingDirectory: outputDir,
-        );
+            useFvm ? 'fvm' : 'dart',
+            [
+              if (useFvm) 'dart',
+              'run',
+              'flutter_launcher_icons',
+            ],
+            workingDirectory: outputDir);
         if (result.exitCode != 0) {
           iconProgress.fail('Icon generation failed');
           _logger.warn(result.stdout as String);
@@ -644,15 +645,16 @@ class CreateCommand extends Command<int> {
       _logger.info('');
       _logger.info('    # Point Firebase at your own project:');
       _logger.info(
-          '    dart pub global activate flutterfire_cli  # if not installed');
+        '    dart pub global activate flutterfire_cli  # if not installed',
+      );
       _logger.info('    flutterfire configure');
     } else {
       _logger.info(
         'Firebase is disabled — the app builds and runs without a Firebase '
         'project. To add it later, set kFirebaseEnabled to true in '
         'lib/app/firebase.dart, restore the Firebase tracking bindings '
-        '(// fst:analytics-impl, // fst:crash-impl), and run '
-        'flutterfire configure.',
+        '(// fst:analytics-impl, // fst:crash-impl, // fst:performance-impl), '
+        'and run flutterfire configure.',
       );
       _logger.info('');
       _logger.info('  Next steps:');
@@ -660,8 +662,9 @@ class CreateCommand extends Command<int> {
     }
 
     _logger.info('');
-    _logger
-        .info('    # Make your first commit (a fresh git repo was created):');
+    _logger.info(
+      '    # Make your first commit (a fresh git repo was created):',
+    );
     _logger.info('    git add -A && git commit -m "Initial commit"');
     _logger.info('');
     _logger.info('    # Then run the app:');
@@ -701,15 +704,19 @@ class CreateCommand extends Command<int> {
   }
 
   /// Resolves whether to include the auth pillar. An explicit
-  /// `--auth`/`--no-auth` wins; [forceDisabled] (set when `--no-backend` is
-  /// active, since a local-only app has no server for JWT) overrides to false
-  /// without prompting. Otherwise non-interactive runs default to on and
-  /// interactive runs prompt.
-  bool _resolveAuth({required bool yes, bool forceDisabled = false}) {
+  /// `--auth`/`--no-auth` wins unless [forceDisabled] is set by `--minimal`.
+  /// [defaultDisabled] is set for `--no-backend`: auth stays off for backward
+  /// compatibility unless the caller explicitly retains the JWT client.
+  bool _resolveAuth({
+    required bool yes,
+    bool forceDisabled = false,
+    bool defaultDisabled = false,
+  }) {
     if (forceDisabled) return false;
     if (argResults?.wasParsed('auth') ?? false) {
       return argResults?['auth'] as bool? ?? true;
     }
+    if (defaultDisabled) return false;
     if (yes) return true;
     return Confirm(
       prompt: 'Include auth (login / register)?',
@@ -856,7 +863,8 @@ class CreateCommand extends Command<int> {
       validator: (v) {
         if (v.trim().isEmpty || isValidHttpUrl(v.trim())) return true;
         throw ValidationError(
-            'Must be an http(s) URL, e.g. https://api.acme.com');
+          'Must be an http(s) URL, e.g. https://api.acme.com',
+        );
       },
     ).interact().trim();
     return (ok: true, url: entered.isEmpty ? null : entered);
@@ -918,9 +926,7 @@ class CreateCommand extends Command<int> {
         if (v.trim().isEmpty || validFlexSchemes.contains(v.trim())) {
           return true;
         }
-        throw ValidationError(
-          'Must be one of: ${validFlexSchemes.join(', ')}',
-        );
+        throw ValidationError('Must be one of: ${validFlexSchemes.join(', ')}');
       },
     ).interact().trim();
     return (ok: true, name: entered.isEmpty ? null : entered);
@@ -951,9 +957,7 @@ class CreateCommand extends Command<int> {
         if (v.trim().isEmpty || normaliseSeedColor(v.trim()) != null) {
           return true;
         }
-        throw ValidationError(
-          'Must be 6 hex digits, e.g. #FF5722 or FF5722',
-        );
+        throw ValidationError('Must be 6 hex digits, e.g. #FF5722 or FF5722');
       },
     ).interact().trim();
     if (entered.isEmpty) return (ok: true, hex: null);

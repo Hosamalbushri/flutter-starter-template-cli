@@ -52,6 +52,7 @@ const _authWiringFiles = [
   'test/app/router_redirect_test.dart',
   'test/architecture/package_layering_test.dart',
   'test/architecture/feature_boundaries_test.dart',
+  'test/architecture/firebase_optional_di_test.dart',
 ];
 
 /// Files that are wholly auth-only and are deleted outright.
@@ -99,8 +100,6 @@ Future<void> disableAuth(String projectDir) async {
   }
 
   // Phase 4: delete the auth feature package directory.
-  final authDir = Directory(
-    p.join(projectDir, 'packages', 'features', 'auth'),
-  );
+  final authDir = Directory(p.join(projectDir, 'packages', 'features', 'auth'));
   if (authDir.existsSync()) authDir.deleteSync(recursive: true);
 }

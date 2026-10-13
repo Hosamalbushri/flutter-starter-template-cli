@@ -49,8 +49,8 @@ fst create [options]
     --[no-]firebase    Wire Firebase (default on); --no-firebase scaffolds without it
     --[no-]auth        Include the auth pillar (default on); --no-auth removes login,
                        session management, and the auth package
-    --[no-]backend     Include the backend pillar (default on); --no-backend scaffolds
-                       a fully local-only app (implies --no-auth)
+    --[no-]backend     Include the backend pillar (default on); --no-backend removes
+                       sync/demo features (auth defaults off; --auth retains JWT)
     --minimal          --no-backend + --no-firebase; the leanest scaffold (not negatable)
     --auth-provider    Auth backend: jwt (default, REST/JWT) or firebase (Firebase Auth)
     --exclude-feature  Demo feature(s) to leave out (repeatable): bookmarks,
@@ -74,14 +74,16 @@ By default the project keeps Firebase wired (you then point it at your own
 project with `flutterfire configure`). Pass `--no-firebase` (or answer the
 prompt) to scaffold **without** Firebase: the app builds and runs with no
 Firebase project at all. `--no-firebase` skips the platform initialisation,
-swaps the analytics and crash-reporting bindings to no-ops, removes the Firebase
-Android Gradle plugins, and deletes the template's native Firebase credentials.
+swaps the analytics, crash-reporting, and performance bindings to no-ops,
+removes the Firebase Android Gradle plugins, and deletes the template's native
+Firebase credentials.
 
 It's reversible: set `kFirebaseEnabled` back to `true` in `lib/app/firebase.dart`,
-restore the tracking bindings at the `// fst:analytics-impl` and
-`// fst:crash-impl` markers, and run `flutterfire configure`. Analytics and crash
-reporting are independent ports — keep one on Firebase and the other no-op by
-editing just that binding.
+restore the tracking bindings at the `// fst:analytics-impl`,
+`// fst:crash-impl`, and `// fst:performance-impl` markers, and run
+`flutterfire configure`. Analytics, crash reporting, and performance monitoring
+are independent ports — keep one on Firebase and the others no-op by editing
+just that binding.
 
 ### Excluding demo features
 
@@ -105,21 +107,95 @@ change-password, delete-account, and sign-out actions are gone), and removes
 auth wiring from the router and DI graph. The splash screen waits its minimum
 display time then proceeds directly.
 
-**`--no-backend`** — Scaffolds a fully local-only app. This is a composite
-flag: it implies `--no-auth` (no server means no JWT), removes the three
-server-backed demo features (`bookmarks`, `collections`, `notifications`), and
-strips the `network` and `sync_connectivity_plus` packages along with the app's
-sync cursor store. The `rev_sync` engine itself **stays** — `database` entities
-use its types — but no sync runs. What remains: `home`, `profile` (Settings),
-`splash`, and on-device ObjectBox storage.
+**`--no-backend`** — Removes sync and the three server-backed demo features
+(`bookmarks`, `collections`, `notifications`). Auth defaults off, preserving
+the existing local-only scaffold. Pass `--auth --auth-provider jwt` to retain
+the JWT client and auth screens without the sync/demo backend; in that mode the
+`network` package remains, but app startup does not require a reachable server.
 
 **`--minimal`** — Equivalent to `--no-backend --no-firebase`. The leanest
 possible scaffold: local-only, no Firebase, no accounts. `--minimal` is not
 negatable.
 
 Composition rules:
-- `--no-backend` implies `--no-auth`.
+- `--no-backend` defaults to `--no-auth`; explicit `--auth` retains JWT auth.
 - `--minimal` = `--no-backend --no-firebase`.
+
+### Adding features
+
+Run `fst add-feature` from a generated project root. It creates the package,
+registers workspace dependencies and DI, mounts protected GoRouter routes, and
+updates the architecture layer guard before running code generation, analysis,
+and tests.
+
+```bash
+fst add-feature settings
+fst add-feature audit_log --source api --route-path /admin/audit-log
+```
+
+Each feature owns a stable named root route and nested `details` route. Route
+registration is independent from menu and bottom-navigation registration, so a
+new feature is routable without becoming a tab. `--route-path` accepts absolute
+lowercase kebab-case segments and rejects collisions before writing files.
+`api` and `sync` sources are rejected when their workspace prerequisites were
+removed from the generated project.
+
+Every newly generated package contains `.fst-feature.json`, which records its
+stable ID, generation mode, routes, and fingerprints of CLI-authored files.
+The manifest describes ownership; registrations and dependencies are always
+rediscovered from the current project rather than trusted from a cache.
+
+### Listing, validating, and removing features
+
+```bash
+fst list-features
+fst validate-features
+fst remove-feature inventory --dry-run
+fst remove-feature inventory --yes
+```
+
+`list-features` reports ownership, source mode, route, feature dependencies,
+registration completeness, and removability. `validate-features` exits nonzero
+for missing packages, dangling workspace dependencies, duplicate routes, or
+incomplete CLI-owned registrations.
+
+Removal is deliberately conservative. A reverse dependency blocks deletion;
+the command never cascade-deletes. Manually authored packages are not removed.
+Changed or additional files inside a manifest-owned package also block removal
+unless `--force-modified` explicitly authorizes them. `--yes` confirms only the
+destructive operation and does not override either ownership or modification
+checks. Unmodified features from older CLI versions are removable only when
+their complete scaffold exactly matches a known generator version.
+
+Before writing, the CLI prints a plan covering directories, shared files,
+routes, DI, and dependents. `--dry-run` performs no writes. A real removal takes
+a byte-for-byte source snapshot, updates the four owned registration points,
+regenerates DI, and runs analysis and tests. Any failure restores the snapshot.
+The snapshot is in memory, so an operating-system kill or power loss cannot be
+automatically recovered; commit or otherwise back up valuable work first.
+
+### Reusable workspace packages
+
+```bash
+fst create-package inventory_contracts --type contracts
+fst create-package inventory_storage --type infrastructure \
+  --dependency inventory_contracts
+fst create-package inventory_ui --type ui --dependency inventory_contracts
+fst validate-package inventory_ui
+```
+
+Package types are `contracts`, `infrastructure`, `platform`, `ui`, and `dev`.
+`--dependency` is repeatable, `--dry-run` is strictly no-write, and
+`--no-verify` defers pub resolution, analysis, and package tests. Generated
+packages receive `.fst-package.json`, a single public entrypoint, a focused
+test, workspace/category/layer registration, and transactional rollback.
+
+Dependencies on unknown packages, the application shell, feature
+implementations, invalid categories, runtime test utilities, and cycles are
+rejected. `validate-package` also detects private `lib/src/` imports, public SDK
+leakage, missing tests/files, and invalid manifests. Local application
+templates can declare the versioned `.fst-template.json` schema; incompatible
+declared versions fail before copying.
 
 ### API base URL & launcher icon
 

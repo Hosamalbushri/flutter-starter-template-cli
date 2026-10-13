@@ -147,9 +147,7 @@ Future<void> excludeFeatures(String projectDir, Set<String> features) async {
   pending.forEach((file, content) => file.writeAsStringSync(content));
 
   for (final feature in features) {
-    final dir = Directory(
-      p.join(projectDir, 'packages', 'features', feature),
-    );
+    final dir = Directory(p.join(projectDir, 'packages', 'features', feature));
     if (dir.existsSync()) dir.deleteSync(recursive: true);
 
     if (driftDir == null) continue;

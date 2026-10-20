@@ -146,7 +146,18 @@ void main() {
         '// fst:auth:start\n'
             "import 'package:shared_ui/shared_ui.dart';\n"
             '// fst:auth:end\n'
-            "import 'package:flutter/material.dart';\n",
+            "import 'package:flutter/material.dart';\n"
+            'Future<void> bootstrap() async {\n'
+            '  // fst:auth:start\n'
+            '  final session = SessionScope.maybeOf(context);\n'
+            '  // fst:auth:end\n'
+            '  await Future.wait<void>([\n'
+            '    // fst:auth:start\n'
+            '    if (session != null) session.restore(),\n'
+            '    // fst:auth:end\n'
+            '    Future<void>.delayed(Duration.zero),\n'
+            '  ]);\n'
+            '}\n',
       );
 
       // profile pubspec.
@@ -292,6 +303,14 @@ void main() {
       );
       expect(firebaseOptionalDiTest, isNot(contains('feature_auth')));
       expect(firebaseOptionalDiTest, contains('storage'));
+
+      final splashScreen = read(
+        'packages/features/splash/lib/src/presentation/screens/'
+        'splash_screen.dart',
+      );
+      expect(splashScreen, isNot(contains('SessionScope')));
+      expect(splashScreen, isNot(contains('session.restore')));
+      expect(splashScreen, contains('Future<void>.delayed(Duration.zero)'));
     });
 
     test('deletes auth-only part files', () async {

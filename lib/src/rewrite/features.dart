@@ -70,6 +70,8 @@ const _wiringFiles = [
   'ios/Runner/Info.plist',
   'android/app/src/main/AndroidManifest.xml',
   'test/widget_test.dart',
+  'test/app/app_shell_navigation_test.dart',
+  'test/visual/phase11_integration_golden_test.dart',
   'test/test_utils/mocks.dart',
   'test/architecture/di_module_ordering_test.dart',
   'test/architecture/package_layering_test.dart',

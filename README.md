@@ -1,6 +1,6 @@
 # flutter_starter_template_cli
 
-A CLI tool to scaffold new Flutter projects from [flutter-starter-template](https://github.com/kido-luci/flutter-starter-template) — batteries-included with Firebase, BLoC, auto_route, ObjectBox, and more.
+A CLI tool to scaffold new Flutter projects from [flutter-starter-template](https://github.com/kido-luci/flutter-starter-template) — batteries-included with Firebase, BLoC, GoRouter, ObjectBox or Drift, and more.
 
 ## Installation
 
@@ -119,7 +119,25 @@ negatable.
 
 Composition rules:
 - `--no-backend` defaults to `--no-auth`; explicit `--auth` retains JWT auth.
-- `--minimal` = `--no-backend --no-firebase`.
+- `--minimal` forces `--no-backend --no-firebase --no-auth`.
+
+### Compatibility matrix
+
+| Firebase | Backend | Auth | Provider | Supported |
+|---:|---:|---:|---|---:|
+| on | on | on | `jwt` or `firebase` | yes |
+| off | on | on | `jwt` | yes |
+| on/off | on | off | n/a | yes |
+| on/off | off | off | n/a | yes |
+| on/off | off | on | `jwt` | yes |
+
+Both `objectbox` (default) and `drift` work with every supported row.
+`--no-setup`, feature exclusions, and a schema-compatible `--template-path`
+are orthogonal. Contradictory flags (for example `--minimal --firebase`), an
+auth provider with auth disabled, Firebase Auth without all of its required
+pillars, and an API URL with no backend or auth consumer are rejected before
+the output directory is created. The complete policy and migration guidance
+live in the template's `docs/compatibility.md`.
 
 ### Adding features
 
@@ -196,6 +214,40 @@ rejected. `validate-package` also detects private `lib/src/` imports, public SDK
 leakage, missing tests/files, and invalid manifests. Local application
 templates can declare the versioned `.fst-template.json` schema; incompatible
 declared versions fail before copying.
+
+### Listing and removing reusable packages
+
+```bash
+fst list-packages
+fst remove-package inventory_contracts --dry-run
+fst remove-package inventory_contracts --yes
+```
+
+`list-packages` discovers packages from their actual `pubspec.yaml` files and
+reports type, workspace location, ownership, runtime/development dependencies,
+direct and transitive consumers, validation state, and removal eligibility.
+Ownership is never inferred from a name: a valid `.fst-package.json` is needed
+for CLI ownership. Known packages from older templates are shown as `legacy`,
+and other packages without a manifest are `manual`; neither category can be
+removed by `remove-package`. Core template, feature, and published packages are
+protected even if a manifest is present.
+
+Removal is blocked while the application shell or any remaining workspace
+package consumes the target. Dependents are reported but never modified or
+cascade-deleted. The command also refuses malformed ownership manifests and
+changed or additional files. `--force-modified` is a separate, explicit grant
+to delete those changes inside an otherwise valid CLI-owned package; `--yes`
+only answers the confirmation prompt.
+
+Before writing, `remove-package` prints every generated path, workspace file,
+direct/transitive consumer, and blocker. `--dry-run` invokes no generator or
+verification process and leaves every byte unchanged. A real removal updates
+the root workspace and architecture category/layer registrations, deletes the
+verified package directory, resolves dependencies, regenerates code, analyzes,
+and tests. Any ordinary process or validation failure restores source files,
+generated files, lockfiles, and directories byte-for-byte from the in-memory
+`ProjectSnapshot`. This is not crash-safe against `SIGKILL`, power loss, or
+machine failure.
 
 ### API base URL & launcher icon
 

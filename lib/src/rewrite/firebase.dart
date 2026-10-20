@@ -18,13 +18,14 @@ class FirebaseRewriteException implements Exception {
 String setFirebaseEnabled(String content, {required bool enabled}) {
   final target = 'const bool kFirebaseEnabled = $enabled;';
   if (content.contains(target)) return content;
-  final other = 'const bool kFirebaseEnabled = ${!enabled};';
-  if (!content.contains(other)) {
+  final declarationPattern =
+      RegExp(r'const\s+bool\s+kFirebaseEnabled\s*=[^;]+;');
+  if (!declarationPattern.hasMatch(content)) {
     throw FirebaseRewriteException(
       'Could not find a `kFirebaseEnabled` declaration in lib/app/firebase.dart.',
     );
   }
-  return content.replaceFirst(other, target);
+  return content.replaceFirst(declarationPattern, target);
 }
 
 /// Replaces the expression on the line tagged with `// <marker>` with

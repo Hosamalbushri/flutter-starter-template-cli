@@ -6,6 +6,7 @@ import 'package:mason_logger/mason_logger.dart';
 import 'package:path/path.dart' as p;
 
 import '../config_resolver.dart';
+import '../create_compatibility.dart';
 import '../project_config.dart';
 import '../rewrite/auth.dart';
 import '../rewrite/auth_provider.dart';
@@ -212,7 +213,26 @@ class CreateCommand extends Command<int> {
       useAuth: useAuth,
       useBackend: useBackend,
     );
-    if (authProvider == null) return 1;
+
+    final compatibilityError = validateCreateCompatibility(
+      minimal: minimal,
+      useFirebase: useFirebase,
+      useBackend: useBackend,
+      useAuth: useAuth,
+      authProvider: authProvider,
+      firebaseExplicitlyEnabled: (argResults?.wasParsed('firebase') ?? false) &&
+          (argResults?['firebase'] as bool? ?? false),
+      backendExplicitlyEnabled: (argResults?.wasParsed('backend') ?? false) &&
+          (argResults?['backend'] as bool? ?? false),
+      authExplicitlyEnabled: (argResults?.wasParsed('auth') ?? false) &&
+          (argResults?['auth'] as bool? ?? false),
+      authProviderWasParsed: argResults?.wasParsed('auth-provider') ?? false,
+      apiUrlWasParsed: argResults?.wasParsed('api-url') ?? false,
+    );
+    if (compatibilityError != null) {
+      _logger.err(compatibilityError);
+      return 1;
+    }
 
     final database = _resolveDatabase(yes: yes);
 
@@ -725,43 +745,15 @@ class CreateCommand extends Command<int> {
   }
 
   /// Resolves the auth provider. `--auth-provider` wins; interactive runs
-  /// prompt; `--yes` keeps the default (`jwt`). Returns `null` when validation
-  /// fails (the caller logs and exits non-zero).
-  ///
-  /// `firebase` is only valid when Firebase, auth, AND backend are all enabled.
-  String? _resolveAuthProvider({
+  /// prompt; `--yes` keeps the default (`jwt`). Cross-flag compatibility is
+  /// validated centrally after all pillars have been resolved.
+  String _resolveAuthProvider({
     required bool yes,
     required bool useFirebase,
     required bool useAuth,
     required bool useBackend,
   }) {
     final flag = argResults?['auth-provider'] as String? ?? 'jwt';
-    final isFirebase = flag == 'firebase';
-
-    if (isFirebase) {
-      if (!useFirebase) {
-        _logger.err(
-          '--auth-provider firebase requires Firebase to be enabled. '
-          'Remove --no-firebase (or --minimal) to use Firebase Auth.',
-        );
-        return null;
-      }
-      if (!useBackend) {
-        _logger.err(
-          '--auth-provider firebase requires the backend pillar to be enabled. '
-          'Remove --no-backend (or --minimal) to use Firebase Auth.',
-        );
-        return null;
-      }
-      if (!useAuth) {
-        _logger.err(
-          '--auth-provider firebase requires the auth pillar to be enabled. '
-          'Remove --no-auth to use Firebase Auth.',
-        );
-        return null;
-      }
-    }
-
     // If the flag was explicitly set, use it directly.
     if (argResults?.wasParsed('auth-provider') ?? false) return flag;
 

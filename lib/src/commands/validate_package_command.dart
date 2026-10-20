@@ -4,6 +4,7 @@ import 'package:args/command_runner.dart';
 import 'package:mason_logger/mason_logger.dart';
 
 import '../package_architecture.dart';
+import '../package_lifecycle.dart';
 
 final class ValidatePackageCommand extends Command<int> {
   ValidatePackageCommand(this._logger, {String? rootDirectory})
@@ -34,8 +35,12 @@ final class ValidatePackageCommand extends Command<int> {
       _rootDirectory ?? Directory.current.path,
       name,
     );
-    if (!result.isValid) {
-      for (final issue in result.issues) {
+    final inventory = discoverPackages(
+      _rootDirectory ?? Directory.current.path,
+    );
+    final issues = {...result.issues, ...inventory.issues}.toList()..sort();
+    if (!result.isValid || issues.isNotEmpty) {
+      for (final issue in issues) {
         _logger.err(issue);
       }
       return 1;

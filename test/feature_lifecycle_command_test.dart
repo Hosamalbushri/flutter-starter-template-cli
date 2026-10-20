@@ -8,6 +8,7 @@ import 'package:flutter_starter_template_cli/src/commands/validate_features_comm
 import 'package:flutter_starter_template_cli/src/feature_discovery.dart';
 import 'package:flutter_starter_template_cli/src/feature_manifest.dart';
 import 'package:mason_logger/mason_logger.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 void main() {
@@ -111,6 +112,33 @@ void main() {
       final before = _sourceFiles(project);
       expect(await _remove(project, 'inventory', dryRun: true), 0);
       expect(_sourceFiles(project), before);
+    });
+
+    test('removal regenerates the whole workspace before analysis', () async {
+      final project = _project();
+      addTearDown(() => project.deleteSync(recursive: true));
+      expect(await _add(project, 'generated', 'presentation'), 0);
+      final calls = <(String, List<String>, String?)>[];
+
+      expect(
+        await _remove(
+          project,
+          'generated',
+          processExecutor: (executable, arguments, {workingDirectory}) async {
+            calls.add((executable, arguments, workingDirectory));
+            return ProcessResult(1, 0, '', '');
+          },
+        ),
+        0,
+      );
+
+      expect(calls, hasLength(4));
+      expect(calls[1].$1, 'bash');
+      expect(
+        calls[1].$2,
+        [p.join(project.path, 'tool', 'codegen.sh')],
+      );
+      expect(calls[1].$3, project.path);
     });
 
     test('non-interactive removal requires --yes', () async {

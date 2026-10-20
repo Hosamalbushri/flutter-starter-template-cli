@@ -1,9 +1,11 @@
 export 'src/config_resolver.dart';
+export 'src/create_compatibility.dart';
 export 'src/feature_names.dart';
 export 'src/feature_discovery.dart';
 export 'src/feature_manifest.dart';
 export 'src/project_snapshot.dart';
 export 'src/package_architecture.dart';
+export 'src/package_lifecycle.dart';
 export 'src/package_manifest.dart';
 export 'src/package_spec.dart';
 export 'src/rewrite/auth.dart';

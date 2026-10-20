@@ -10,6 +10,7 @@ final class WorkspacePackage {
     required this.name,
     required this.directory,
     required this.dependencies,
+    required this.devDependencies,
     required this.type,
     required this.manifest,
   });
@@ -17,6 +18,7 @@ final class WorkspacePackage {
   final String name;
   final String directory;
   final Set<String> dependencies;
+  final Set<String> devDependencies;
   final ReusablePackageType? type;
   final PackageManifest? manifest;
 }
@@ -61,6 +63,7 @@ Map<String, WorkspacePackage> discoverWorkspacePackages(String root) {
       name: name,
       directory: directory.path,
       dependencies: parsePubspecDependencies(source),
+      devDependencies: parsePubspecDevDependencies(source),
       type: manifest?.type ?? knownWorkspacePackageTypes[name],
       manifest: manifest,
     );
@@ -245,10 +248,18 @@ String? parsePubspecName(String source) => RegExp(
     ).firstMatch(source)?.group(1);
 
 Set<String> parsePubspecDependencies(String source) {
+  return _parsePubspecDependencySection(source, 'dependencies');
+}
+
+Set<String> parsePubspecDevDependencies(String source) {
+  return _parsePubspecDependencySection(source, 'dev_dependencies');
+}
+
+Set<String> _parsePubspecDependencySection(String source, String section) {
   final dependencies = <String>{};
   var inDependencies = false;
   for (final line in source.split('\n')) {
-    if (line == 'dependencies:') {
+    if (line.trimRight() == '$section:') {
       inDependencies = true;
       continue;
     }

@@ -255,15 +255,9 @@ final class RemoveFeatureCommand extends Command<int> {
         'dependency resolution',
       ),
       (
-        useFvm ? 'fvm' : 'dart',
-        [
-          if (useFvm) 'dart',
-          'run',
-          'build_runner',
-          'build',
-          '--delete-conflicting-outputs',
-        ],
-        'app DI generation',
+        'bash',
+        [p.join(root, 'tool', 'codegen.sh')],
+        'workspace code generation',
       ),
       (
         useFvm ? 'fvm' : 'flutter',

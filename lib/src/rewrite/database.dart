@@ -313,20 +313,27 @@ abstract class DriftModule {
   @lazySingleton
   AppDatabase provideDatabase() => AppDatabase.open();
 
+  @lazySingleton
+  AtomicWriteCoordinator provideAtomicWriteCoordinator(AppDatabase db) =>
+      DriftAtomicWriteCoordinator(db);
+
 $syncProvider  // fst:feature:bookmarks:start
   @lazySingleton
   BookmarksLocalDataSource provideBookmarksLocalDataSource(
     AppDatabase db,
+    AtomicWriteCoordinator atomic,
+    CollectionsMembershipService collections,
   ) =>
-      DriftBookmarksDataSource(db);
+      DriftBookmarksDataSource(db, atomic, collections);
   // fst:feature:bookmarks:end
 
   // fst:feature:collections:start
   @lazySingleton
   CollectionsLocalDataSource provideCollectionsLocalDataSource(
     AppDatabase db,
+    AtomicWriteCoordinator atomic,
   ) =>
-      DriftCollectionsDataSource(db);
+      DriftCollectionsDataSource(db, atomic);
   // fst:feature:collections:end
 
   // fst:feature:notifications:start
@@ -354,7 +361,9 @@ void _writeBookmarksDataSource(String projectDir) {
       'bookmarks_local_data_source.dart',
     ),
   ).writeAsStringSync('''
+import 'package:architecture/architecture.dart';
 import 'package:database/database.dart';
+import 'package:feature_collections/feature_collections.dart';
 import 'package:rev_sync/rev_sync.dart';
 
 /// Drift-backed CRUD + sync helpers. All operations are async using Drift's
@@ -376,9 +385,14 @@ abstract interface class BookmarksLocalDataSource
 }
 
 class DriftBookmarksDataSource implements BookmarksLocalDataSource {
-  DriftBookmarksDataSource(AppDatabase db) : _db = db;
+  DriftBookmarksDataSource(this._db, this._atomic, this._collections);
 
   final AppDatabase _db;
+  final AtomicWriteCoordinator _atomic;
+  final CollectionsMembershipService _collections;
+  final Map<String, BookmarkEntity> _stagedPuts = {};
+  final Set<String> _stagedDeletes = {};
+  bool _cleanupRegistered = false;
 
   @override
   Future<List<BookmarkEntity>> listVisible() async {
@@ -388,7 +402,7 @@ class DriftBookmarksDataSource implements BookmarksLocalDataSource {
           )
           ..orderBy([(b) => OrderingTerm.desc(b.createdAtUs)]))
         .get();
-    return rows.map(_rowToEntity).toList();
+    return _mergeStaged(rows.map(_rowToEntity).toList(), visibleOnly: true);
   }
 
   @override
@@ -396,11 +410,16 @@ class DriftBookmarksDataSource implements BookmarksLocalDataSource {
     final rows = await (_db.select(_db.bookmarks)
           ..orderBy([(b) => OrderingTerm.desc(b.createdAtUs)]))
         .get();
-    return rows.map(_rowToEntity).toList();
+    return _mergeStaged(rows.map(_rowToEntity).toList(), visibleOnly: false);
   }
 
   @override
   Future<BookmarkEntity?> getByUuid(String uuid) async {
+    if (_atomic.isActive) {
+      if (_stagedDeletes.contains(uuid)) return null;
+      final staged = _stagedPuts[uuid];
+      if (staged != null) return staged;
+    }
     final row = await (_db.select(_db.bookmarks)
           ..where((b) => b.uuid.equals(uuid)))
         .getSingleOrNull();
@@ -423,22 +442,90 @@ class DriftBookmarksDataSource implements BookmarksLocalDataSource {
 
   @override
   Future<BookmarkEntity> putNew(BookmarkEntity entity) async {
-    entity.id = await _db.into(_db.bookmarks).insert(_toCompanion(entity));
+    if (!_atomic.isActive) {
+      return _atomic.run(() => putNew(entity));
+    }
+    _stagePut(entity, insert: true);
     return entity;
   }
 
   @override
   Future<void> put(BookmarkEntity entity) async {
-    await _db
-        .into(_db.bookmarks)
-        .insertOnConflictUpdate(_toCompanion(entity));
+    if (!_atomic.isActive) {
+      await _atomic.run(() => put(entity));
+      return;
+    }
+    _stagePut(entity, insert: false);
   }
 
   @override
   Future<void> hardDelete(BookmarkEntity entity) async {
-    await (_db.delete(_db.bookmarks)
-          ..where((b) => b.id.equals(entity.id)))
-        .go();
+    await _atomic.run(() async {
+      final cleanup = await _collections.removeBookmarkEverywhere(entity.uuid);
+      if (cleanup case Err(:final failure)) {
+        throw StateError(
+          'Could not remove bookmark collection references: \${failure.message}',
+        );
+      }
+      _prepareStaging();
+      _stagedPuts.remove(entity.uuid);
+      _stagedDeletes.add(entity.uuid);
+      _atomic.stage(
+        sync: () => throw UnsupportedError('Drift uses async transactions.'),
+        async: () async {
+          await (_db.delete(_db.bookmarks)
+                ..where((b) => b.id.equals(entity.id)))
+              .go();
+        },
+      );
+    });
+  }
+
+  void _stagePut(BookmarkEntity entity, {required bool insert}) {
+    _prepareStaging();
+    _stagedDeletes.remove(entity.uuid);
+    _stagedPuts[entity.uuid] = entity;
+    _atomic.stage(
+      sync: () => throw UnsupportedError('Drift uses async transactions.'),
+      async: () async {
+        if (insert && entity.id == 0) {
+          entity.id = await _db.into(_db.bookmarks).insert(_toCompanion(entity));
+        } else {
+          await _db
+              .into(_db.bookmarks)
+              .insertOnConflictUpdate(_toCompanion(entity));
+        }
+      },
+    );
+  }
+
+  void _prepareStaging() {
+    if (_cleanupRegistered) return;
+    _cleanupRegistered = true;
+    _atomic.afterCompletion(() {
+      _stagedPuts.clear();
+      _stagedDeletes.clear();
+      _cleanupRegistered = false;
+    });
+  }
+
+  List<BookmarkEntity> _mergeStaged(
+    List<BookmarkEntity> persisted, {
+    required bool visibleOnly,
+  }) {
+    if (!_atomic.isActive) return persisted;
+    final byUuid = <String, BookmarkEntity>{
+      for (final entity in persisted) entity.uuid: entity,
+      ..._stagedPuts,
+    }..removeWhere((uuid, _) => _stagedDeletes.contains(uuid));
+    final result = byUuid.values
+        .where(
+          (entity) =>
+              !visibleOnly || entity.syncState != SyncState.pendingDelete,
+        )
+        .toList();
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
   }
 
   BookmarkEntity _rowToEntity(BookmarkRow row) => BookmarkEntity(
@@ -524,9 +611,13 @@ abstract interface class CollectionsLocalDataSource
 }
 
 class DriftCollectionsDataSource implements CollectionsLocalDataSource {
-  DriftCollectionsDataSource(AppDatabase db) : _db = db;
+  DriftCollectionsDataSource(this._db, this._atomic);
 
   final AppDatabase _db;
+  final AtomicWriteCoordinator _atomic;
+  final Map<String, CollectionEntity> _stagedPuts = {};
+  final Set<String> _stagedDeletes = {};
+  bool _cleanupRegistered = false;
 
   @override
   Future<List<CollectionEntity>> listVisible() async {
@@ -536,7 +627,7 @@ class DriftCollectionsDataSource implements CollectionsLocalDataSource {
           )
           ..orderBy([(c) => OrderingTerm.desc(c.createdAtUs)]))
         .get();
-    return rows.map(_rowToEntity).toList();
+    return _mergeStaged(rows.map(_rowToEntity).toList(), visibleOnly: true);
   }
 
   @override
@@ -544,11 +635,16 @@ class DriftCollectionsDataSource implements CollectionsLocalDataSource {
     final rows = await (_db.select(_db.collections)
           ..orderBy([(c) => OrderingTerm.desc(c.createdAtUs)]))
         .get();
-    return rows.map(_rowToEntity).toList();
+    return _mergeStaged(rows.map(_rowToEntity).toList(), visibleOnly: false);
   }
 
   @override
   Future<CollectionEntity?> getByUuid(String uuid) async {
+    if (_atomic.isActive) {
+      if (_stagedDeletes.contains(uuid)) return null;
+      final staged = _stagedPuts[uuid];
+      if (staged != null) return staged;
+    }
     final row = await (_db.select(_db.collections)
           ..where((c) => c.uuid.equals(uuid)))
         .getSingleOrNull();
@@ -571,23 +667,87 @@ class DriftCollectionsDataSource implements CollectionsLocalDataSource {
 
   @override
   Future<CollectionEntity> putNew(CollectionEntity entity) async {
-    entity.id =
-        await _db.into(_db.collections).insert(_toCompanion(entity));
+    if (!_atomic.isActive) {
+      return _atomic.run(() => putNew(entity));
+    }
+    _stagePut(entity, insert: true);
     return entity;
   }
 
   @override
   Future<void> put(CollectionEntity entity) async {
-    await _db
-        .into(_db.collections)
-        .insertOnConflictUpdate(_toCompanion(entity));
+    if (!_atomic.isActive) {
+      await _atomic.run(() => put(entity));
+      return;
+    }
+    _stagePut(entity, insert: false);
   }
 
   @override
   Future<void> hardDelete(CollectionEntity entity) async {
-    await (_db.delete(_db.collections)
-          ..where((c) => c.id.equals(entity.id)))
-        .go();
+    if (!_atomic.isActive) {
+      await _atomic.run(() => hardDelete(entity));
+      return;
+    }
+    _prepareStaging();
+    _stagedPuts.remove(entity.uuid);
+    _stagedDeletes.add(entity.uuid);
+    _atomic.stage(
+      sync: () => throw UnsupportedError('Drift uses async transactions.'),
+      async: () async {
+        await (_db.delete(_db.collections)
+              ..where((c) => c.id.equals(entity.id)))
+            .go();
+      },
+    );
+  }
+
+  void _stagePut(CollectionEntity entity, {required bool insert}) {
+    _prepareStaging();
+    _stagedDeletes.remove(entity.uuid);
+    _stagedPuts[entity.uuid] = entity;
+    _atomic.stage(
+      sync: () => throw UnsupportedError('Drift uses async transactions.'),
+      async: () async {
+        if (insert && entity.id == 0) {
+          entity.id =
+              await _db.into(_db.collections).insert(_toCompanion(entity));
+        } else {
+          await _db
+              .into(_db.collections)
+              .insertOnConflictUpdate(_toCompanion(entity));
+        }
+      },
+    );
+  }
+
+  void _prepareStaging() {
+    if (_cleanupRegistered) return;
+    _cleanupRegistered = true;
+    _atomic.afterCompletion(() {
+      _stagedPuts.clear();
+      _stagedDeletes.clear();
+      _cleanupRegistered = false;
+    });
+  }
+
+  List<CollectionEntity> _mergeStaged(
+    List<CollectionEntity> persisted, {
+    required bool visibleOnly,
+  }) {
+    if (!_atomic.isActive) return persisted;
+    final byUuid = <String, CollectionEntity>{
+      for (final entity in persisted) entity.uuid: entity,
+      ..._stagedPuts,
+    }..removeWhere((uuid, _) => _stagedDeletes.contains(uuid));
+    final result = byUuid.values
+        .where(
+          (entity) =>
+              !visibleOnly || entity.syncState != SyncState.pendingDelete,
+        )
+        .toList();
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
   }
 
   CollectionEntity _rowToEntity(CollectionRow row) => CollectionEntity(

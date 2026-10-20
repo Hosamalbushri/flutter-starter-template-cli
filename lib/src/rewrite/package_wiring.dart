@@ -32,6 +32,32 @@ String registerPackageLayer(String content, String name, int layer) =>
       "  '$name': $layer,",
     );
 
+String unregisterWorkspacePackage(String content, String name) =>
+    _removeExactLine(
+      content,
+      '  - packages/$name',
+      marker: 'fst:packages',
+    );
+
+String unregisterPackageCategory(String content, String name) =>
+    _removeMatchingLine(
+      content,
+      RegExp(
+        "^\\s*'${RegExp.escape(name)}':"
+        r'\s*PackageCategory\.[A-Za-z0-9_]+,\s*$',
+      ),
+      marker: 'fst:package-categories',
+      description: 'package category for $name',
+    );
+
+String unregisterPackageLayer(String content, String name) =>
+    _removeMatchingLine(
+      content,
+      RegExp("^\\s*'${RegExp.escape(name)}':" r'\s*\d+,\s*$'),
+      marker: 'fst:package-layers',
+      description: 'package layer for $name',
+    );
+
 Map<String, int> parseArchitectureLayers(String content) => {
       for (final match in RegExp(
         r"^\s*'([a-zA-Z0-9_]+)':\s*(\d+),",
@@ -50,5 +76,42 @@ String _insertBeforeMarker(String content, String marker, String line) {
     );
   }
   lines.insert(index, line);
+  return lines.join('\n');
+}
+
+String _removeExactLine(
+  String content,
+  String line, {
+  required String marker,
+}) =>
+    _removeMatchingLine(
+      content,
+      RegExp('^${RegExp.escape(line)}' r'$'),
+      marker: marker,
+      description: line.trim(),
+    );
+
+String _removeMatchingLine(
+  String content,
+  RegExp pattern, {
+  required String marker,
+  required String description,
+}) {
+  final lines = content.split('\n');
+  if (!lines.any((line) => line.contains(marker))) {
+    throw PackageWiringException(
+      'Missing // $marker marker required for safe package removal.',
+    );
+  }
+  final matches = <int>[
+    for (var index = 0; index < lines.length; index++)
+      if (pattern.hasMatch(lines[index])) index,
+  ];
+  if (matches.length != 1) {
+    throw PackageWiringException(
+      'Expected exactly one $description registration; found ${matches.length}.',
+    );
+  }
+  lines.removeAt(matches.single);
   return lines.join('\n');
 }

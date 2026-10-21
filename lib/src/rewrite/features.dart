@@ -116,13 +116,17 @@ const _featureDatabaseFiles = {
 ///
 /// Dependencies are the caller's responsibility — pass an already-expanded set
 /// (see [expandExcludedFeatures]).
-Future<void> excludeFeatures(String projectDir, Set<String> features) async {
+Future<void> excludeFeatures(
+  String projectDir,
+  Set<String> features, {
+  bool includeDocumentCenter = true,
+}) async {
   if (features.isEmpty) return;
 
-  // When every removable feature is gone, `enabledFeatures` is empty — also
-  // strip the now-orphaned module infrastructure (marked `fst:feature:_infra`)
-  // so the trimmed project has no unused imports/declarations.
+  // When every removable feature is gone, strip the now-orphaned sync infrastructure
+  // (marked `fst:feature:_infra`). Strip router only when document_center is also excluded.
   final stripInfra = removableFeatures.difference(features).isEmpty;
+  final stripRouter = stripInfra && !includeDocumentCenter;
 
   // Null on the ObjectBox path, where persistence files must survive.
   final driftDir = driftPackageDir(projectDir);
@@ -140,6 +144,7 @@ Future<void> excludeFeatures(String projectDir, Set<String> features) async {
       content = removeFeatureRegions(content, feature);
     }
     if (stripInfra) content = removeFeatureRegions(content, '_infra');
+    if (stripRouter) content = removeFeatureRegions(content, '_router');
     if (content == original) continue;
     // Removing a region at end-of-file can drop the trailing newline; normalise
     // to exactly one so the result passes the `eol_at_end_of_file` lint.

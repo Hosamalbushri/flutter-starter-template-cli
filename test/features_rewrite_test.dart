@@ -199,6 +199,48 @@ void main() {
       expect(read('lib/app/features.dart'), isNot(contains('injection.dart')));
     });
 
+    test('keeps _router when document center is included', () async {
+      write(
+        'lib/app/features.dart',
+        '// fst:feature:_router:start\n'
+            "import 'package:go_router/go_router.dart';\n"
+            '// fst:feature:_router:end\n'
+            '// fst:feature:_infra:start\n'
+            "import 'di/injection.dart';\n"
+            '// fst:feature:_infra:end\n',
+      );
+      await excludeFeatures(
+        dir.path,
+        {'bookmarks', 'collections', 'notifications'},
+        includeDocumentCenter: true,
+      );
+      final content = read('lib/app/features.dart');
+      expect(content, isNot(contains('injection.dart')));
+      expect(content, contains('go_router.dart'));
+    });
+
+    test(
+        'strips _router when all removable features and document center are excluded',
+        () async {
+      write(
+        'lib/app/features.dart',
+        '// fst:feature:_router:start\n'
+            "import 'package:go_router/go_router.dart';\n"
+            '// fst:feature:_router:end\n'
+            '// fst:feature:_infra:start\n'
+            "import 'di/injection.dart';\n"
+            '// fst:feature:_infra:end\n',
+      );
+      await excludeFeatures(
+        dir.path,
+        {'bookmarks', 'collections', 'notifications'},
+        includeDocumentCenter: false,
+      );
+      final content = read('lib/app/features.dart');
+      expect(content, isNot(contains('injection.dart')));
+      expect(content, isNot(contains('go_router.dart')));
+    });
+
     test('strips bookmarks media permissions from native config', () async {
       await excludeFeatures(dir.path, {'bookmarks'});
 

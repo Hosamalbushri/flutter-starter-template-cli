@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'features.dart';
+
 /// Files that compose the optional document packages into the application.
 const _documentWiringFiles = [
   'pubspec.yaml',
@@ -86,6 +88,11 @@ Future<void> configureDocuments(
     var rewritten = original;
     if (!includeCenter) {
       rewritten = removeDocumentRegions(rewritten, 'center');
+      if (relative == 'lib/app/features.dart' &&
+          !rewritten.contains('Module()')) {
+        rewritten = removeFeatureRegions(rewritten, '_infra');
+        rewritten = removeFeatureRegions(rewritten, '_router');
+      }
     }
     if (!includeEngine) {
       rewritten = removeDocumentRegions(rewritten, 'engine');

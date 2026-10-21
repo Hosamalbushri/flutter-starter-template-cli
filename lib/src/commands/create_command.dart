@@ -557,7 +557,11 @@ class CreateCommand extends Command<int> {
         'Removing features: ${excludedFeatures.join(', ')}',
       );
       try {
-        await excludeFeatures(outputDir, excludedFeatures);
+        await excludeFeatures(
+          outputDir,
+          excludedFeatures,
+          includeDocumentCenter: useDocumentCenter,
+        );
         featureProgress.complete('Features removed');
       } catch (e) {
         featureProgress.fail('Removing features failed');
@@ -683,6 +687,7 @@ class CreateCommand extends Command<int> {
             [
               setupScript,
               '--no-hooks',
+              '--format',
             ],
             workingDirectory: outputDir);
         if (result.exitCode != 0) {

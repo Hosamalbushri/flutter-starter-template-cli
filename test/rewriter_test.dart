@@ -39,6 +39,19 @@ void main() {
             "import '../helper.dart';\n"),
       );
     });
+
+    test('preserves multiline import statements while sorting', () {
+      const source = "import 'package:z/z.dart';\n"
+          "import 'package:a/a.dart'\n"
+          "    show SomeClass, OtherClass;\n";
+
+      expect(
+        sortDartImports(source),
+        equals("import 'package:a/a.dart'\n"
+            "    show SomeClass, OtherClass;\n"
+            "import 'package:z/z.dart';\n"),
+      );
+    });
   });
 
   group('rewriteProject', () {

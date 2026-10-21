@@ -82,8 +82,10 @@ const _wiringFiles = [
   // the flag combination. Absent paths are skipped, so listing both is safe.
   'packages/database/lib/database.dart',
   'packages/database/lib/src/app_database.dart',
+  'packages/database/test/app_database_test.dart',
   'packages/database_drift/lib/database.dart',
   'packages/database_drift/lib/src/app_database.dart',
+  'packages/database_drift/test/app_database_test.dart',
 ];
 
 /// Per-feature persistence files, deleted along with the feature.

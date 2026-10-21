@@ -62,6 +62,9 @@ String sortDartImports(String content) {
   var start = importIndexes.first;
   if (start > 0 && _isMarkerStart(lines[start - 1])) start--;
   var end = importIndexes.last;
+  while (end + 1 < lines.length && !lines[end].trim().endsWith(';')) {
+    end++;
+  }
   if (end + 1 < lines.length && _isMarkerEnd(lines[end + 1])) end++;
 
   final blocks = <({List<String> lines, String uri, int index})>[];
@@ -96,7 +99,12 @@ String sortDartImports(String content) {
 
     final uri = _importUri(line);
     if (uri == null) return content;
-    blocks.add((lines: [line], uri: uri, index: blocks.length));
+    final importLines = <String>[line];
+    while (index + 1 <= end && !importLines.last.trim().endsWith(';')) {
+      index++;
+      importLines.add(lines[index]);
+    }
+    blocks.add((lines: importLines, uri: uri, index: blocks.length));
     index++;
   }
 

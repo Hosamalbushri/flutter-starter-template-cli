@@ -287,6 +287,7 @@ import 'package:database/database.dart';
 // public surface, not its persistence internals.
 // ignore: implementation_imports
 import 'package:feature_bookmarks/src/data/local/bookmarks_local_data_source.dart';
+import 'package:feature_collections/feature_collections.dart';
 // fst:feature:bookmarks:end
 // fst:feature:collections:start
 // The app shell binds each feature's concrete local data source, and that

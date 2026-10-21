@@ -22,6 +22,8 @@ export 'src/rewrite/icon.dart';
 export 'src/project_config.dart';
 export 'src/rewrite/clean_slate.dart';
 export 'src/rewrite/database.dart' show driftPackageDir, swapDatabase;
+export 'src/rewrite/documents.dart';
+export 'src/rewrite/lockfile.dart';
 export 'src/rewrite/local_template.dart';
 export 'src/rewrite/package_template.dart';
 export 'src/rewrite/package_wiring.dart';

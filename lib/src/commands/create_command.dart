@@ -14,12 +14,14 @@ import '../rewrite/backend.dart';
 import '../rewrite/branding.dart';
 import '../rewrite/clean_slate.dart';
 import '../rewrite/database.dart';
+import '../rewrite/documents.dart';
 import '../rewrite/e2e.dart';
 import '../rewrite/env.dart';
 import '../rewrite/features.dart';
 import '../rewrite/firebase.dart';
 import '../rewrite/icon.dart';
 import '../rewrite/local_template.dart';
+import '../rewrite/lockfile.dart';
 import '../rewrite/rewriter.dart';
 import '../rewrite/template_only.dart';
 import '../validators.dart';
@@ -74,6 +76,19 @@ class CreateCommand extends Command<int> {
         help: 'Scaffold the smallest possible app: no backend, no Firebase, '
             'no auth, no server-backed demo features. Equivalent to '
             '--no-backend --no-firebase.',
+      )
+      ..addFlag(
+        'document-engine',
+        defaultsTo: true,
+        help: 'Include the reusable Document Engine package (default). '
+            'Disabling it also removes Document Center and the document-backed '
+            'bookmarks/collections demo features.',
+      )
+      ..addFlag(
+        'document-center',
+        defaultsTo: true,
+        help: 'Include the Document Center feature (default). Requires '
+            'Document Engine. Use --no-document-center for the engine only.',
       )
       ..addMultiOption(
         'exclude-feature',
@@ -207,6 +222,16 @@ class CreateCommand extends Command<int> {
       defaultDisabled: !useBackend,
     );
 
+    final useDocumentEngine = _resolveDocumentEngine(
+      yes: yes,
+      forceDisabled: minimal,
+    );
+    final useDocumentCenter = _resolveDocumentCenter(
+      yes: yes,
+      engineEnabled: useDocumentEngine,
+      forceDisabled: minimal,
+    );
+
     final authProvider = _resolveAuthProvider(
       yes: yes,
       useFirebase: useFirebase,
@@ -228,6 +253,14 @@ class CreateCommand extends Command<int> {
           (argResults?['auth'] as bool? ?? false),
       authProviderWasParsed: argResults?.wasParsed('auth-provider') ?? false,
       apiUrlWasParsed: argResults?.wasParsed('api-url') ?? false,
+      useDocumentEngine: useDocumentEngine,
+      useDocumentCenter: useDocumentCenter,
+      documentEngineExplicitlyEnabled:
+          (argResults?.wasParsed('document-engine') ?? false) &&
+              (argResults?['document-engine'] as bool? ?? false),
+      documentCenterExplicitlyEnabled:
+          (argResults?.wasParsed('document-center') ?? false) &&
+              (argResults?['document-center'] as bool? ?? false),
     );
     if (compatibilityError != null) {
       _logger.err(compatibilityError);
@@ -236,10 +269,12 @@ class CreateCommand extends Command<int> {
 
     final database = _resolveDatabase(yes: yes);
 
+    final forcedExclusions = <String>{
+      if (!useBackend) ...removableFeatures,
+    };
     final excludedFeatures = _resolveExcludedFeatures(
       yes: yes,
-      // --no-backend forces exclusion of all server-backed demo features.
-      forcedExclusions: useBackend ? const {} : removableFeatures,
+      forcedExclusions: forcedExclusions,
     );
     if (excludedFeatures == null) return 1;
 
@@ -281,11 +316,18 @@ class CreateCommand extends Command<int> {
     );
     _logger.info('  Auth provider  ${lightCyan.wrap(authProvider)}');
     _logger.info('  Database       ${lightCyan.wrap(database)}');
+    _logger.info(
+      '  Document engine ${lightCyan.wrap(useDocumentEngine ? 'enabled' : 'disabled')}',
+    );
+    _logger.info(
+      '  Document center ${lightCyan.wrap(useDocumentCenter ? 'enabled' : 'disabled')}',
+    );
     if (excludedFeatures.isNotEmpty) {
       _logger.info(
         '  Exclude        ${lightCyan.wrap(excludedFeatures.join(', '))}',
       );
     }
+
     if (api.url != null) {
       _logger.info('  API base URL   ${lightCyan.wrap(api.url!)}');
     }
@@ -524,6 +566,27 @@ class CreateCommand extends Command<int> {
       }
     }
 
+    // ── 5c1. Apply optional document packages ───────────────────────────────
+    // Stripping the engine also removes optional document import capabilities
+    // from bookmarks and collections without having to exclude the features themselves.
+    if (!useDocumentEngine || !useDocumentCenter) {
+      final documentProgress = _logger.progress(
+        'Applying optional document package selection',
+      );
+      try {
+        await configureDocuments(
+          outputDir,
+          includeEngine: useDocumentEngine,
+          includeCenter: useDocumentCenter,
+        );
+        documentProgress.complete('Document package selection applied');
+      } catch (e) {
+        documentProgress.fail('Document package selection failed');
+        _logger.err('$e');
+        return 1;
+      }
+    }
+
     // ── 5c2. Prune the demo end-to-end suite ─────────────────────────────────
     // The suite drives the bundled demo (register → bookmark → collection →
     // notifications → sign out) against the real backend, so it only holds
@@ -590,6 +653,22 @@ class CreateCommand extends Command<int> {
       }
     }
 
+    // ── 5e. Rebuild and enforce the application lockfile ────────────────────
+    // Every shape mutation above can change the workspace graph. A generated
+    // application always ships a lockfile, including with --no-setup.
+    final lockProgress = _logger.progress('Refreshing dependency lockfile');
+    try {
+      await refreshGeneratedLockfile(
+        outputDir,
+        useFvm: File(p.join(outputDir, '.fvmrc')).existsSync() && _hasFvm(),
+      );
+      lockProgress.complete('Dependency lockfile is reproducible');
+    } catch (e) {
+      lockProgress.fail('Dependency lockfile refresh failed');
+      _logger.err('$e');
+      return 1;
+    }
+
     // ── 6. Setup ─────────────────────────────────────────────────────────────
 
     final skipSetup = argResults?['no-setup'] as bool? ?? false;
@@ -610,6 +689,7 @@ class CreateCommand extends Command<int> {
           setupProgress.fail('setup.sh failed');
           _logger.warn(result.stdout as String);
           _logger.err(result.stderr as String);
+          return 1;
         } else {
           setupProgress.complete('Dependencies installed & code generated');
         }
@@ -740,6 +820,37 @@ class CreateCommand extends Command<int> {
     if (yes) return true;
     return Confirm(
       prompt: 'Include auth (login / register)?',
+      defaultValue: true,
+    ).interact();
+  }
+
+  bool _resolveDocumentEngine({
+    required bool yes,
+    bool forceDisabled = false,
+  }) {
+    if (forceDisabled) return false;
+    if (argResults?.wasParsed('document-engine') ?? false) {
+      return argResults?['document-engine'] as bool? ?? true;
+    }
+    if (yes) return true;
+    return Confirm(
+      prompt: 'Include Document Engine?',
+      defaultValue: true,
+    ).interact();
+  }
+
+  bool _resolveDocumentCenter({
+    required bool yes,
+    required bool engineEnabled,
+    bool forceDisabled = false,
+  }) {
+    if (forceDisabled || !engineEnabled) return false;
+    if (argResults?.wasParsed('document-center') ?? false) {
+      return argResults?['document-center'] as bool? ?? true;
+    }
+    if (yes) return true;
+    return Confirm(
+      prompt: 'Include Document Center?',
       defaultValue: true,
     ).interact();
   }

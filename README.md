@@ -52,6 +52,8 @@ fst create [options]
     --[no-]backend     Include the backend pillar (default on); --no-backend removes
                        sync/demo features (auth defaults off; --auth retains JWT)
     --minimal          --no-backend + --no-firebase; the leanest scaffold (not negatable)
+    --[no-]document-engine  Include the reusable document engine (default on)
+    --[no-]document-center  Include Document Center (default on; requires engine)
     --auth-provider    Auth backend: jwt (default, REST/JWT) or firebase (Firebase Auth)
     --exclude-feature  Demo feature(s) to leave out (repeatable): bookmarks,
                        collections, notifications
@@ -61,7 +63,7 @@ fst create [options]
     --seed-color       Brand color (hex) for the launcher icon + web
     --font             App font: a google_fonts method prefix (e.g. roboto, openSans)
 -y, --yes              Run non-interactively: no prompts, no confirmation
-    --no-setup         Skip running tool/setup.sh after scaffolding
+    --no-setup         Skip code generation/setup after refreshing the lockfile
 ```
 
 Each input can be supplied as a flag instead of answering its prompt. When a
@@ -94,6 +96,21 @@ deselect them in the interactive multi-select; the CLI strips each feature's
 `// fst:feature:<name>` regions from the app wiring and deletes its package.
 Because `bookmarks` depends on `collections`, excluding `collections` also
 excludes `bookmarks`.
+
+### Optional document packages
+
+Document Engine and Document Center are independently selectable at scaffold
+time. The default keeps both. Use `--no-document-center` for an engine-only
+project, or `--no-document-engine` for a project without either package.
+Document Center cannot exist without Document Engine; an explicit
+`--document-center --no-document-engine` combination is rejected. When Document
+Engine is excluded, bookmarks and collections remain fully operational (local
+storage, sync, and UI), while their optional document import delegates and sheets
+are cleanly stripped.
+
+Every generated application has its `pubspec.lock` refreshed and immediately
+verified with `flutter pub get --enforce-lockfile`, including when `--no-setup`
+is used. `--no-setup` skips code generation and the remaining bootstrap only.
 
 ### Optional pillars
 

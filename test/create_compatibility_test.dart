@@ -110,6 +110,42 @@ void main() {
       );
     });
 
+    test('rejects Document Center without Document Engine', () {
+      expect(
+        validateCreateCompatibility(
+          minimal: false,
+          useFirebase: true,
+          useBackend: true,
+          useAuth: true,
+          authProvider: 'jwt',
+          useDocumentEngine: false,
+          useDocumentCenter: false,
+          documentCenterExplicitlyEnabled: true,
+        ),
+        contains('--document-center requires Document Engine'),
+      );
+    });
+
+    test('accepts engine-only and document-free project shapes', () {
+      for (final shape in const [
+        (engine: true, center: false),
+        (engine: false, center: false),
+      ]) {
+        expect(
+          validateCreateCompatibility(
+            minimal: false,
+            useFirebase: true,
+            useBackend: true,
+            useAuth: true,
+            authProvider: 'jwt',
+            useDocumentEngine: shape.engine,
+            useDocumentCenter: shape.center,
+          ),
+          isNull,
+        );
+      }
+    });
+
     test('command rejects a conflict before creating the output directory',
         () async {
       final temp = Directory.systemTemp.createTempSync('fst-compatibility-');

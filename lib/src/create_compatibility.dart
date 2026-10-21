@@ -14,6 +14,10 @@ String? validateCreateCompatibility({
   bool authExplicitlyEnabled = false,
   bool authProviderWasParsed = false,
   bool apiUrlWasParsed = false,
+  bool useDocumentEngine = true,
+  bool useDocumentCenter = true,
+  bool documentEngineExplicitlyEnabled = false,
+  bool documentCenterExplicitlyEnabled = false,
 }) {
   if (minimal && firebaseExplicitlyEnabled) {
     return '--minimal disables Firebase and cannot be combined with '
@@ -26,6 +30,20 @@ String? validateCreateCompatibility({
   if (minimal && authExplicitlyEnabled) {
     return '--minimal disables authentication and cannot be combined with '
         '--auth. Remove one of the flags.';
+  }
+  if (minimal && documentEngineExplicitlyEnabled) {
+    return '--minimal disables Document Engine and cannot be combined with '
+        '--document-engine. Remove one of the flags.';
+  }
+  if (minimal && documentCenterExplicitlyEnabled) {
+    return '--minimal disables Document Center and cannot be combined with '
+        '--document-center. Remove one of the flags.';
+  }
+
+  if (!useDocumentEngine &&
+      (useDocumentCenter || documentCenterExplicitlyEnabled)) {
+    return '--document-center requires Document Engine. Remove '
+        '--no-document-engine or pass --no-document-center.';
   }
 
   if (!useAuth && authProviderWasParsed) {

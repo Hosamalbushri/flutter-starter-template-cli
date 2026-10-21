@@ -281,32 +281,10 @@ void _writeDriftModule(String projectDir, {required bool useBackend}) {
     p.join(projectDir, 'lib', 'core', 'data', 'database', 'drift_module.dart'),
   ).writeAsStringSync('''
 import 'package:database/database.dart';
-// fst:feature:bookmarks:start
-// The app shell binds each feature's concrete local data source, and that
-// lives under the package's lib/src by design: a barrel exports the feature's
-// public surface, not its persistence internals.
-// ignore: implementation_imports
-import 'package:feature_bookmarks/src/data/local/bookmarks_local_data_source.dart';
-import 'package:feature_collections/feature_collections.dart';
-// fst:feature:bookmarks:end
-// fst:feature:collections:start
-// The app shell binds each feature's concrete local data source, and that
-// lives under the package's lib/src by design: a barrel exports the feature's
-// public surface, not its persistence internals.
-// ignore: implementation_imports
-import 'package:feature_collections/src/data/local/collections_local_data_source.dart';
-// fst:feature:collections:end
-// fst:feature:notifications:start
-// The app shell binds each feature's concrete local data source, and that
-// lives under the package's lib/src by design: a barrel exports the feature's
-// public surface, not its persistence internals.
-// ignore: implementation_imports
-import 'package:feature_notifications/src/data/local/notifications_local_data_source.dart';
-// fst:feature:notifications:end
 import 'package:injectable/injectable.dart';
 $syncPackageImport$syncRelativeImport
 
-/// Drift DI module: provides [AppDatabase] and the feature data sources backed
+/// Drift DI module: provides [AppDatabase] and core database primitives backed
 /// by Drift. Auto-discovered by injectable_generator via the `@module`
 /// annotation — no explicit entry in `externalPackageModulesBefore` needed.
 @module
@@ -318,33 +296,7 @@ abstract class DriftModule {
   AtomicWriteCoordinator provideAtomicWriteCoordinator(AppDatabase db) =>
       DriftAtomicWriteCoordinator(db);
 
-$syncProvider  // fst:feature:bookmarks:start
-  @lazySingleton
-  BookmarksLocalDataSource provideBookmarksLocalDataSource(
-    AppDatabase db,
-    AtomicWriteCoordinator atomic,
-    CollectionsMembershipService collections,
-  ) =>
-      DriftBookmarksDataSource(db, atomic, collections);
-  // fst:feature:bookmarks:end
-
-  // fst:feature:collections:start
-  @lazySingleton
-  CollectionsLocalDataSource provideCollectionsLocalDataSource(
-    AppDatabase db,
-    AtomicWriteCoordinator atomic,
-  ) =>
-      DriftCollectionsDataSource(db, atomic);
-  // fst:feature:collections:end
-
-  // fst:feature:notifications:start
-  @lazySingleton
-  NotificationsLocalDataSource provideNotificationsLocalDataSource(
-    AppDatabase db,
-  ) =>
-      DriftNotificationsDataSource(db);
-  // fst:feature:notifications:end
-}
+$syncProvider}
 ''');
 }
 
@@ -365,6 +317,7 @@ void _writeBookmarksDataSource(String projectDir) {
 import 'package:architecture/architecture.dart';
 import 'package:database/database.dart';
 import 'package:feature_collections/feature_collections.dart';
+import 'package:injectable/injectable.dart' hide Order;
 import 'package:rev_sync/rev_sync.dart';
 
 /// Drift-backed CRUD + sync helpers. All operations are async using Drift's
@@ -385,6 +338,7 @@ abstract interface class BookmarksLocalDataSource
   Future<BookmarkEntity> putNew(BookmarkEntity entity);
 }
 
+@LazySingleton(as: BookmarksLocalDataSource)
 class DriftBookmarksDataSource implements BookmarksLocalDataSource {
   DriftBookmarksDataSource(this._db, this._atomic, this._collections);
 
@@ -591,6 +545,7 @@ void _writeCollectionsDataSource(String projectDir) {
     ),
   ).writeAsStringSync('''
 import 'package:database/database.dart';
+import 'package:injectable/injectable.dart';
 import 'package:rev_sync/rev_sync.dart';
 
 /// Drift-backed CRUD + sync helpers. All operations are async using Drift's
@@ -611,6 +566,7 @@ abstract interface class CollectionsLocalDataSource
   Future<CollectionEntity> putNew(CollectionEntity entity);
 }
 
+@LazySingleton(as: CollectionsLocalDataSource)
 class DriftCollectionsDataSource implements CollectionsLocalDataSource {
   DriftCollectionsDataSource(this._db, this._atomic);
 
@@ -810,6 +766,7 @@ void _writeNotificationsDataSource(String projectDir) {
     ),
   ).writeAsStringSync('''
 import 'package:database/database.dart';
+import 'package:injectable/injectable.dart';
 
 /// Drift-backed cache for the notifications feed. All operations are async
 /// using Drift's select/into API.
@@ -845,6 +802,7 @@ abstract interface class NotificationsLocalDataSource {
   Future<void> removeActivity(int pk);
 }
 
+@LazySingleton(as: NotificationsLocalDataSource)
 class DriftNotificationsDataSource implements NotificationsLocalDataSource {
   DriftNotificationsDataSource(AppDatabase db) : _db = db;
 

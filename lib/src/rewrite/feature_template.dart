@@ -447,15 +447,11 @@ class ${n.pascal}Screen extends StatelessWidget {
                 vertical: AppSpacing.sm,
               ),
               itemCount: state.items.length,
-              separatorBuilder: (_, _) =>
-                  const SizedBox(height: AppSpacing.sm),
+              separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
               itemBuilder: (context, index) {
                 final item = state.items[index];
                 return AppCard(
-                  child: Text(
-                    item.title,
-                    style: context.textTheme.titleMedium,
-                  ),
+                  child: Text(item.title, style: context.textTheme.titleMedium),
                 );
               },
             );
@@ -485,10 +481,7 @@ class ${n.pascal}DetailsScreen extends StatelessWidget {
       body: Padding(
         padding: const EdgeInsetsDirectional.all(AppSpacing.md),
         child: AppCard(
-          child: Text(
-            l10n.appTitle,
-            style: context.textTheme.bodyLarge,
-          ),
+          child: Text(l10n.appTitle, style: context.textTheme.bodyLarge),
         ),
       ),
     );
@@ -746,7 +739,9 @@ class ${n.pascal}RepositoryImpl implements ${n.pascal}Repository {
   Future<Result<List<${n.pascal}>>> list() async {
     try {
       final dtos = await _remote.list();
-      return Ok(dtos.map((d) => ${n.pascal}(id: d.id, title: d.title)).toList());
+      return Ok(
+        dtos.map((d) => ${n.pascal}(id: d.id, title: d.title)).toList(),
+      );
     } on DioException catch (e) {
       return Err(UnknownFailure(e.message ?? 'Network error'));
     }

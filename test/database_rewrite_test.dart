@@ -85,12 +85,11 @@ objectbox: true
     ).readAsStringSync();
     expect(module, contains('abstract class DriftModule'));
     expect(module, isNot(contains('ObjectBox')));
+    expect(module, isNot(contains('feature_bookmarks')));
+    expect(module, isNot(contains('feature_collections')));
+    expect(module, isNot(contains('feature_notifications')));
     expect(
       module.indexOf("package:database/database.dart"),
-      lessThan(module.indexOf("package:feature_bookmarks/")),
-    );
-    expect(
-      module.indexOf("package:feature_bookmarks/"),
       lessThan(module.indexOf("package:injectable/injectable.dart")),
     );
     expect(
@@ -101,6 +100,13 @@ objectbox: true
       module.indexOf("package:rev_sync/rev_sync.dart"),
       lessThan(module.indexOf("../sync/drift_sync_cursor_store.dart")),
     );
+    final bookmarksDs = File(
+      p.join(
+        tempDir.path,
+        'packages/features/bookmarks/lib/src/data/local/bookmarks_local_data_source.dart',
+      ),
+    ).readAsStringSync();
+    expect(bookmarksDs, contains('@LazySingleton(as: BookmarksLocalDataSource)'));
   });
 
   test('ObjectBox removes stray Drift root bindings', () async {
